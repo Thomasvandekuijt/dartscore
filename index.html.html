@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<title>Pro Dart Score - Multi Player</title>
+<style>
+    body { background:#111; color:#fff; font-family:'Segoe UI', sans-serif; margin:0; }
+    .container { display:flex; max-width:1200px; margin:auto; padding:20px; gap: 20px; }
+    .main { flex:2; text-align:center; background: #222; padding: 20px; border-radius: 12px; }
+    .sidebar { flex:1; background:#1c1c1c; padding:20px; border-radius:12px; border: 1px solid #333; }
+    
+    .mode-selector { margin-bottom: 20px; padding: 10px; background: #333; border-radius: 8px; }
+    .player-display { display: flex; justify-content: center; gap: 20px; margin-bottom: 20px; }
+    .player-box { padding: 15px; border-radius: 8px; background: #2a2a2a; flex: 1; border: 2px solid transparent; transition: 0.3s; }
+    .player-box.active { border-color: #f0c000; background: #333; box-shadow: 0 0 15px rgba(240,192,0,0.2); }
+    
+    h1 { margin-top: 0; color: #f0c000; }
+    .score-big { font-size: 54px; font-weight: bold; color: #f0c000; margin: 5px 0; }
+    .stats-small { font-size: 13px; color: #aaa; }
+    
+    #turn-info { font-size:18px; margin-bottom:20px; background: #444; padding: 10px; border-radius: 8px; color: #fff; }
+
+    .section { margin:10px 0; }
+    button { padding:10px; margin:3px; font-size:16px; border:none; border-radius:6px; cursor:pointer; transition: 0.2s; }
+    
+    .number { width:52px; background:#444; color:#fff; font-weight: bold; }
+    .mult { background:#0055aa; color: white; width: 80px; }
+    .mult.active { background: #00aaff; box-shadow: 0 0 10px #00aaff; transform: scale(1.05); }
+    .bull { background:#880000; color: white; width: 110px; }
+    .control { background:#555; color: white; min-width: 90px; }
+    .undo { background: #a56100; }
+    
+    .log { list-style:none; padding:0; margin:0; max-height: 200px; overflow-y: auto; font-size: 14px; }
+    .log li { padding:6px; border-bottom:1px solid #333; display: flex; justify-content: space-between; }
+    .checkout-list { color: #00ff88; font-weight: bold; min-height: 100px; }
+    .active-name { color: #f0c000; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<div class="container">
+    <div class="main">
+        <h1>🎯 Dart Score Tracker</h1>
+
+        <div class="mode-selector">
+            <label><input type="radio" name="mode" value="1" onchange="changeMode(1)" checked> 1 Speler</label>
+            <label style="margin-left:20px;"><input type="radio" name="mode" value="2" onchange="changeMode(2)"> 2 Spelers</label>
+        </div>
+
+        <div class="player-display">
+            <div id="p1-box" class="player-box active">
+                <div id="p1-name" class="active-name">Speler 1</div>
+                <div id="p1-score" class="score-big">501</div>
+                <div id="p1-stats" class="stats-small">Avg: 0.00 | Pijlen: 0</div>
+            </div>
+            <div id="p2-box" class="player-box" style="display:none;">
+                <div id="p2-name">Speler 2</div>
+                <div id="p2-score" class="score-big">501</div>
+                <div id="p2-stats" class="stats-small">Avg: 0.00 | Pijlen: 0</div>
+            </div>
+        </div>
+
+        <div id="turn-info">Beurt score: 0 (0/3)</div>
+
+        <div class="section">
+            <button class="mult active" id="m1" onclick="setMultiplier(1)">Single</button>
+            <button class="mult" id="m2" onclick="setMultiplier(2)">Double</button>
+            <button class="mult" id="m3" onclick="setMultiplier(3)">Triple</button>
+        </div>
+
+        <div class="section" id="numbers"></div>
+
+        <div class="section">
+            <button class="bull" onclick="addScore(25)">Bull (25)</button>
+            <button class="bull" onclick="addScore(50)">Bullseye (50)</button>
+            <button class="number" onclick="addScore(0)">Mis</button>
+        </div>
+
+        <div class="section">
+            <button class="control undo" onclick="undo()">↩️ Undo</button>
+            <button class="control" onclick="finishTurn()">➡️ Volgende</button>
+            <button class="control" onclick="resetGame()">🔄 Reset</button>
+        </div>
+    </div>
+
+    <div class="sidebar">
+        <h3>🎯 Checkouts (Huidige)</h3>
+        <ul class="log checkout-list" id="checkouts"></ul>
+        <hr style="border:0; border-top:1px solid #333; margin:15px 0;">
+        <h3>📜 Verloop</h3>
+        <ul class="log" id="log"></ul>
+    </div>
+</div>
+
+<script>
+const startScore = 501;
+let numPlayers = 1;
+let currentPlayer = 0; // 0 = Speler 1, 1 = Speler 2
+
+let players = [
+    { score: startScore, totalDarts: 0, totalPoints: 0, scoreAtStart: startScore, history: [] },
+    { score: startScore, totalDarts: 0, totalPoints: 0, scoreAtStart: startScore, history: [] }
+];
+
+let turnScore = 0;
+let dartsInTurn = 0;
+let multiplier = 1;
+let globalTurnCounter = 1;
+
+// UI Elements
+const numbersEl = document.getElementById("numbers");
+const logEl = document.getElementById("log");
+
+// Init nummers
+for (let i = 1; i <= 20; i++) {
+    const btn = document.createElement("button");
+    btn.textContent = i; btn.className = "number";
+    btn.onclick = () => addScore(i * multiplier);
+    numbersEl.appendChild(btn);
+}
+
+function changeMode(n) {
+    numPlayers = n;
+    document.getElementById("p2-box").style.display = (n === 2) ? "block" : "none";
+    resetGame();
+}
+
+function setMultiplier(m) {
+    multiplier = m;
+    document.querySelectorAll('.mult').forEach(b => b.classList.remove('active'));
+    document.getElementById('m' + m).classList.add('active');
+}
+
+function addScore(points) {
+    if (dartsInTurn >= 3) return;
+
+    let p = players[currentPlayer];
+    
+    // Save state for undo
+    p.history.push({
+        score: p.score, turnScore, dartsInTurn, totalDarts: p.totalDarts, totalPoints: p.totalPoints
+    });
+
+    const potentialRemaining = p.score - points;
+
+    if (potentialRemaining < 0 || potentialRemaining === 1) {
+        alert("BUST!");
+        p.score = p.scoreAtStart;
+        p.totalDarts += (3 - dartsInTurn);
+        finishTurn(true);
+        return;
+    }
+
+    p.score = potentialRemaining;
+    turnScore += points;
+    dartsInTurn++;
+    p.totalDarts++;
+    p.totalPoints += points;
+
+    if (p.score === 0) {
+        alert(`SPELER ${currentPlayer + 1} WINT! 🎉`);
+        resetGame();
+        return;
+    }
+
+    setMultiplier(1);
+    updateUI();
+    
+    if (dartsInTurn === 3) {
+        setTimeout(finishTurn, 400);
+    }
+}
+
+function finishTurn(isBust = false) {
+    if (dartsInTurn === 0 && !isBust) return;
+
+    const li = document.createElement("li");
+    li.innerHTML = `<span>S${currentPlayer+1} Beurt ${globalTurnCounter}</span> <span>${isBust ? 'BUST' : turnScore + ' pnt'}</span>`;
+    logEl.prepend(li);
+
+    players[currentPlayer].scoreAtStart = players[currentPlayer].score;
+    players[currentPlayer].history = []; 
+    
+    // Switch speler
+    if (numPlayers === 2) {
+        currentPlayer = (currentPlayer === 0) ? 1 : 0;
+    }
+
+    turnScore = 0;
+    dartsInTurn = 0;
+    globalTurnCounter++;
+    updateUI();
+}
+
+function undo() {
+    let p = players[currentPlayer];
+    if (p.history.length > 0) {
+        const last = p.history.pop();
+        p.score = last.score;
+        turnScore = last.turnScore;
+        dartsInTurn = last.dartsInTurn;
+        p.totalDarts = last.totalDarts;
+        p.totalPoints = last.totalPoints;
+        updateUI();
+    }
+}
+
+function updateUI() {
+    // Update Speler 1
+    document.getElementById("p1-score").textContent = players[0].score;
+    const avg1 = players[0].totalDarts > 0 ? ((players[0].totalPoints / players[0].totalDarts) * 3).toFixed(2) : "0.00";
+    document.getElementById("p1-stats").textContent = `Avg: ${avg1} | Pijlen: ${players[0].totalDarts}`;
+
+    // Update Speler 2
+    document.getElementById("p2-score").textContent = players[1].score;
+    const avg2 = players[1].totalDarts > 0 ? ((players[1].totalPoints / players[1].totalDarts) * 3).toFixed(2) : "0.00";
+    document.getElementById("p2-stats").textContent = `Avg: ${avg2} | Pijlen: ${players[1].totalDarts}`;
+
+    // Active Player highlight
+    document.getElementById("p1-box").className = (currentPlayer === 0) ? "player-box active" : "player-box";
+    document.getElementById("p2-box").className = (currentPlayer === 1) ? "player-box active" : "player-box";
+    
+    document.getElementById("turn-info").textContent = `Speler ${currentPlayer + 1} aan beurt: ${turnScore} (${dartsInTurn}/3)`;
+
+    updateCheckouts();
+}
+
+function resetGame() {
+    players.forEach(p => {
+        p.score = startScore;
+        p.scoreAtStart = startScore;
+        p.totalDarts = 0;
+        p.totalPoints = 0;
+        p.history = [];
+    });
+    currentPlayer = 0;
+    turnScore = 0;
+    dartsInTurn = 0;
+    globalTurnCounter = 1;
+    logEl.innerHTML = "";
+    updateUI();
+}
+
+function updateCheckouts() {
+    const checkoutEl = document.getElementById("checkouts");
+    checkoutEl.innerHTML = "";
+    const score = players[currentPlayer].score;
+    if (score > 170) return;
+
+    const outs = getCheckouts(score).slice(0, 5);
+    outs.forEach(o => {
+        const li = document.createElement("li");
+        li.textContent = o.join(" - ");
+        checkoutEl.appendChild(li);
+    });
+}
+
+function getCheckouts(score) {
+    if (score > 170 || score < 2) return [];
+    const singles = [...Array(20)].map((_,i)=>({label:`${i+1}`, value:i+1})).concat({label:"25",value:25});
+    const doubles = [...Array(20)].map((_,i)=>({label:`D${i+1}`, value:(i+1)*2})).concat({label:"DBULL",value:50});
+    const triples = [...Array(20)].map((_,i)=>({label:`T${i+1}`, value:(i+1)*3}));
+    const all = [...singles, ...triples, ...doubles];
+    const results = [];
+    doubles.forEach(d => { if (d.value === score) results.push([d.label]); });
+    all.forEach(a => { doubles.forEach(d => { if (a.value + d.value === score) results.push([a.label, d.label]); }); });
+    all.forEach(a => { all.forEach(b => { doubles.forEach(d => { if (a.value + b.value + d.value === score) results.push([a.label, b.label, d.label]); }); }); });
+    return results;
+}
+
+updateUI();
+</script>
+</body>
+</html>
